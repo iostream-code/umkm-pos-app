@@ -13,6 +13,7 @@ use App\Http\Controllers\Api\V1\DashboardController;
 use App\Http\Controllers\Api\V1\ReportController;
 use App\Http\Controllers\Api\V1\UserController;
 use App\Http\Controllers\Api\V1\StoreController;
+use App\Http\Controllers\Api\V1\AnalyticsController;
 
 /*
 |--------------------------------------------------------------------------
@@ -71,6 +72,7 @@ Route::prefix('v1')->group(function () {
             'show',
             'store',
         ]);
+
         Route::post('orders/{id}/cancel',  [OrderController::class, 'cancel']);
         Route::post('orders/{id}/refund',  [OrderController::class, 'refund']);
         Route::get('orders/{id}/receipt',  [OrderController::class, 'receipt']);
@@ -89,6 +91,13 @@ Route::prefix('v1')->group(function () {
             Route::get('products',         [ReportController::class, 'products']);
             Route::get('customers',        [ReportController::class, 'customers']);
             Route::get('export/sales',     [ReportController::class, 'exportSales']);
+        });
+
+        // Analytics (proxy ke Python service)
+        Route::prefix('analytics')->group(function () {
+            Route::get('stock-forecast', [AnalyticsController::class, 'stockForecast']);
+            Route::get('sales-report',   [AnalyticsController::class, 'salesReport']);
+            Route::get('generate-pdf',   [AnalyticsController::class, 'generatePdf']);
         });
 
         // User Management (owner & manager only)

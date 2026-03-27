@@ -149,3 +149,16 @@ export const userApi = {
     api.put(`/users/${id}`, data),
   delete: (id: string) => api.delete(`/users/${id}`),
 };
+
+// ── Analytics (Python Django service via Laravel proxy) ───────────
+// Laravel memproxy request ke Python agar frontend tidak perlu
+// tahu URL service Python secara langsung
+export const analyticsApi = {
+  // Dashboard summary dengan data dari Python
+  dashboard: (storeId: string) =>
+    api.get("/dashboard", { params: { store_id: storeId } }),
+
+  // Prediksi stok ML
+  stockForecast: (storeId: string) =>
+    api.get("/analytics/stock-forecast", { params: { store_id: storeId } }),
+};

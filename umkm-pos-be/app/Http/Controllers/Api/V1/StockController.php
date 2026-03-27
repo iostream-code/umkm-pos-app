@@ -82,7 +82,7 @@ class StockController extends Controller
             ->when($request->product_id, fn($q) => $q->where('product_id', $request->product_id))
             ->when($request->type, fn($q) => $q->where('type', $request->type))
             ->latest()
-            ->paginate(20);
+            ->paginate(5);
 
         return response()->json($movements);
     }

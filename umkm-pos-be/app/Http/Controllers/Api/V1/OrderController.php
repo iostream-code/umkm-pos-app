@@ -25,10 +25,15 @@ class OrderController extends Controller
         $orders = $this->orderService->paginate(
             storeId: $request->user()->store_id,
             filters: $request->only([
-                'search', 'status', 'payment_method',
-                'date_from', 'date_to', 'user_id', 'shift_id',
+                'search',
+                'status',
+                'payment_method',
+                'date_from',
+                'date_to',
+                'user_id',
+                'shift_id',
             ]),
-            perPage: (int) $request->get('per_page', 15),
+            perPage: (int) $request->get('per_page', 10),
         );
 
         return response()->json(new OrderCollection($orders));
@@ -56,7 +61,7 @@ class OrderController extends Controller
     {
         $order = $this->orderService->createTransaction(
             cashier: $request->user(),
-            data:    $request->validated(),
+            data: $request->validated(),
         );
 
         return response()->json([
@@ -77,10 +82,10 @@ class OrderController extends Controller
         ]);
 
         $order = $this->orderService->cancel(
-            id:      $id,
+            id: $id,
             storeId: $request->user()->store_id,
-            userId:  $request->user()->id,
-            reason:  $request->reason,
+            userId: $request->user()->id,
+            reason: $request->reason,
         );
 
         return response()->json([
@@ -100,11 +105,11 @@ class OrderController extends Controller
         ]);
 
         $order = $this->orderService->refund(
-            id:      $id,
+            id: $id,
             storeId: $request->user()->store_id,
-            userId:  $request->user()->id,
-            reason:  $request->reason,
-            amount:  $request->amount,
+            userId: $request->user()->id,
+            reason: $request->reason,
+            amount: $request->amount,
         );
 
         return response()->json([
@@ -120,7 +125,7 @@ class OrderController extends Controller
     public function receipt(Request $request, string $id): JsonResponse
     {
         $receipt = $this->orderService->generateReceipt(
-            id:      $id,
+            id: $id,
             storeId: $request->user()->store_id,
         );
 

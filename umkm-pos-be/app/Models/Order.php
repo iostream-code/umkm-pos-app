@@ -7,10 +7,11 @@ use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Concerns\HasUuids;
 
 class Order extends Model
 {
-    use HasFactory, SoftDeletes;
+    use HasFactory, SoftDeletes, HasUuids;
 
     protected $keyType      = 'string';
     public    $incrementing = false;
@@ -52,16 +53,22 @@ class Order extends Model
     {
         static::creating(function (Order $order) {
             if (empty($order->order_number)) {
-                // Gunakan tanggal dari order jika ada, jika tidak gunakan hari ini
-                $date = $order->created_at ? $order->created_at : now();
+                $today = now()->format('Ymd');
 
-                $count = static::whereDate('created_at', $date)
-                    ->where('store_id', $order->store_id)
-                    ->count() + 1;
+                // Gunakan lock untuk mencegah nomor ganda jika transaksi sangat cepat (Race Condition)
+                $lastOrder = static::where('store_id', $order->store_id)
+                    ->where('order_number', 'like', "INV-{$today}-%")
+                    ->latest('id')
+                    ->first();
 
-                $order->order_number = 'INV-'
-                    . $date->format('Ymd') . '-'
-                    . str_pad($count, 4, '0', STR_PAD_LEFT);
+                if ($lastOrder) {
+                    $lastNumber = explode('-', $lastOrder->order_number);
+                    $nextSequence = (int) end($lastNumber) + 1;
+                } else {
+                    $nextSequence = 1;
+                }
+
+                $order->order_number = 'INV-' . $today . '-' . str_pad($nextSequence, 4, '0', STR_PAD_LEFT);
             }
         });
     }

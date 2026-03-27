@@ -20,12 +20,10 @@ class ProductResource extends JsonResource
             'price'       => (float) $this->price,
             'cost_price'  => (float) $this->cost_price,
             'margin'      => $this->margin, // computed attribute
-            'stock'       => $this->stock,
-            'min_stock'   => $this->min_stock,
-            'unit'        => $this->unit,
-            'track_stock' => $this->track_stock,
-            'is_active'   => $this->is_active,
-            'is_low_stock' => $this->track_stock && $this->stock <= $this->min_stock,
+            'stock'        => (int) $this->stock,
+            'min_stock'    => (int) $this->min_stock,
+            'track_stock'  => (bool) $this->track_stock,
+            'is_low_stock' => (bool) ($this->track_stock && $this->stock <= $this->min_stock),
             'category'    => $this->whenLoaded('category', fn() => [
                 'id'   => $this->category->id,
                 'name' => $this->category->name,

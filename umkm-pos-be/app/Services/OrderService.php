@@ -38,7 +38,9 @@ class OrderService
             $discountData   = [];
             if (! empty($data['discount_code'])) {
                 [$discountAmount, $discountData] = $this->applyDiscount(
-                    $data['discount_code'], $subtotal, $cashier->store_id
+                    $data['discount_code'],
+                    $subtotal,
+                    $cashier->store_id
                 );
             }
 

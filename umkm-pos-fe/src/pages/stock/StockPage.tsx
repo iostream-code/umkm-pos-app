@@ -1,809 +1,771 @@
-import { useState, useContext, useCallback, createContext } from 'react'
+import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useForm } from 'react-hook-form'
+import { zodResolver } from '@hookform/resolvers/zod'
+import { z } from 'zod'
 import {
-  Search, Package, AlertTriangle, ChevronLeft, ChevronRight,
-  X, SlidersHorizontal, CheckCircle, XCircle,
-  ArrowDownCircle, ArrowUpCircle, RefreshCw,
-  History, TrendingDown, Filter,
+  AlertTriangle, TrendingDown, Package, RefreshCw, X,
+  Loader2, Brain, Clock, ArrowUpCircle, ArrowDownCircle,
+  SlidersHorizontal, ShieldAlert, ShieldCheck, Search,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react'
-import { formatDate } from '@/lib/utils'
-import axios from '@/lib/axios'
-import { useStockAlert } from '@/hooks/useStockAlert'
+import { stockApi, analyticsApi, productApi } from '@/api'
+import { formatDateTime, getAxiosErrorMessage } from '@/lib/utils'
+import toast from 'react-hot-toast'
+import { useAuthStore, selectUser } from '@/stores/authStore'
+import type { Product } from '@/types'
 
-// ─── Toast System ─────────────────────────────────────────────────────────────
-
-type ToastVariant = 'success' | 'error' | 'warning'
-interface ToastItem { id: number; message: string; variant: ToastVariant }
-
-const ToastContext = createContext<(msg: string, variant?: ToastVariant) => void>(() => { })
-const useToast = () => useContext(ToastContext)
-
-function ToastProvider({ children }: { children: React.ReactNode }) {
-  const [toasts, setToasts] = useState<ToastItem[]>([])
-  let nextId = 0
-
-  const push = useCallback((message: string, variant: ToastVariant = 'success') => {
-    const id = ++nextId
-    setToasts((prev) => [...prev, { id, message, variant }])
-    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3500)
-  }, [])
-
-  const dismiss = (id: number) => setToasts((prev) => prev.filter((t) => t.id !== id))
-
-  const styles: Record<ToastVariant, string> = {
-    success: 'bg-white border-success-200 text-success-700',
-    error: 'bg-white border-danger-200 text-danger-700',
-    warning: 'bg-white border-warning-200 text-warning-700',
-  }
-  const icons: Record<ToastVariant, React.ReactNode> = {
-    success: <CheckCircle size={16} className="text-success-500 shrink-0" />,
-    error: <XCircle size={16} className="text-danger-500 shrink-0" />,
-    warning: <AlertTriangle size={16} className="text-warning-500 shrink-0" />,
-  }
-
-  return (
-    <ToastContext.Provider value={push}>
-      {children}
-      <div className="fixed bottom-5 right-5 z-[100] flex flex-col gap-2 pointer-events-none">
-        {toasts.map((t) => (
-          <div
-            key={t.id}
-            className={`flex items-center gap-3 px-4 py-3 rounded-xl border shadow-lg text-sm font-medium pointer-events-auto
-              animate-[slideIn_0.2s_ease-out] ${styles[t.variant]}`}
-            style={{ minWidth: 260, maxWidth: 360 }}
-          >
-            {icons[t.variant]}
-            <span className="flex-1 text-surface-800">{t.message}</span>
-            <button onClick={() => dismiss(t.id)} className="text-surface-300 hover:text-surface-500 transition-colors ml-1">
-              <X size={14} />
-            </button>
-          </div>
-        ))}
-      </div>
-      <style>{`
-        @keyframes slideIn {
-          from { opacity: 0; transform: translateX(16px); }
-          to   { opacity: 1; transform: translateX(0); }
-        }
-        @keyframes slideDown {
-          from { opacity: 0; transform: translateY(-8px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
-      `}</style>
-    </ToastContext.Provider>
-  )
-}
-
-// ─── Types ────────────────────────────────────────────────────────────────────
-
-interface Category {
-  id: string
-  name: string
-  slug: string
-  color: string | null
-  icon: string | null
-  sort_order: number
-  children?: Category[]
-}
-
-interface Product {
-  id: string
-  name: string
-  sku: string | null
-  barcode: string | null
-  image: string | null
-  price: number
-  cost_price: number
-  stock: number
-  min_stock: number
-  unit: string | null
-  track_stock: boolean
-  is_active: boolean
-  is_low_stock: boolean
-  category: { id: string; name: string } | null
-  updated_at: string
-}
-
-interface ProductMeta {
-  current_page: number
-  per_page: number
-  total: number
-  last_page: number
-}
-
-interface StockMovement {
-  id: string
+// ── Types ─────────────────────────────────────────────────────────
+interface ForecastItem {
   product_id: string
   product_name: string
   product_sku: string | null
-  type: 'in' | 'out' | 'adjustment'
-  quantity: number
-  stock_before: number
-  stock_after: number
-  notes: string | null
-  created_at: string
+  current_stock: number
+  unit: string
+  min_stock: number
+  avg_daily_usage: number
+  days_until_empty: number
+  estimated_empty_date: string
+  risk_level: 'critical' | 'high' | 'medium' | 'low'
+  recommended_restock: number
 }
 
-// ─── API ──────────────────────────────────────────────────────────────────────
-
-const productsApi = {
-  list: (params: Record<string, any>) =>
-    axios.get('/products', { params }).then((r) => r.data as { data: Product[]; meta: ProductMeta }),
-  stockHistory: (id: string) =>
-    axios.get(`/products/${id}/stock-history`).then((r) => r.data),
+interface ForecastData {
+  generated_at: string
+  forecast_days: number
+  total_at_risk: number
+  by_risk: {
+    critical: ForecastItem[]
+    high: ForecastItem[]
+    medium: ForecastItem[]
+    low: ForecastItem[]
+  }
 }
 
-const categoriesApi = {
-  list: () => axios.get('/categories').then((r) => r.data.data as Category[]),
+// ── Risk config ───────────────────────────────────────────────────
+const RISK_CONFIG = {
+  critical: {
+    label: 'Kritis',
+    icon: <ShieldAlert size={13} />,
+    badge: 'bg-danger-50 text-danger-700 border border-danger-200',
+    card: 'border-l-danger-500',
+  },
+  high: {
+    label: 'Tinggi',
+    icon: <AlertTriangle size={13} />,
+    badge: 'bg-warning-50 text-warning-700 border border-warning-200',
+    card: 'border-l-warning-500',
+  },
+  medium: {
+    label: 'Sedang',
+    icon: <TrendingDown size={13} />,
+    badge: 'bg-amber-50 text-amber-700 border border-amber-200',
+    card: 'border-l-amber-400',
+  },
+  low: {
+    label: 'Rendah',
+    icon: <Package size={13} />,
+    badge: 'bg-surface-100 text-surface-600 border border-surface-200',
+    card: 'border-l-surface-300',
+  },
 }
 
-const stockApi = {
-  adjustment: (data: { product_id: string; type: string; quantity: number; notes: string }) =>
-    axios.post('/stock/adjustment', data),
-  movements: (params?: Record<string, any>) =>
-    axios.get('/stock/movements', { params }).then((r) => r.data),
-}
-
-// ─── Shared UI ────────────────────────────────────────────────────────────────
-
-const inputCls = 'w-full px-3 py-2 text-sm border border-surface-200 rounded-xl bg-white text-surface-900 placeholder:text-surface-400 focus:outline-none focus:ring-2 focus:ring-primary-200 focus:border-primary-400 transition-all'
-
-function Badge({ children, variant = 'default' }: {
-  children: React.ReactNode
-  variant?: 'success' | 'warning' | 'danger' | 'default' | 'neutral'
+// ── Step 1 Modal: Pilih Produk ────────────────────────────────────
+function ProductPickerModal({
+  onSelect,
+  onClose,
+}: {
+  onSelect: (product: Product) => void
+  onClose: () => void
 }) {
-  const cls = {
-    success: 'bg-success-50 text-success-700 border-success-200',
-    warning: 'bg-warning-50 text-warning-700 border-warning-200',
-    danger: 'bg-danger-50 text-danger-700 border-danger-200',
-    default: 'bg-primary-50 text-primary-700 border-primary-200',
-    neutral: 'bg-surface-100 text-surface-600 border-surface-200',
-  }[variant]
-  return (
-    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium border ${cls}`}>
-      {children}
-    </span>
-  )
-}
+  const [search, setSearch] = useState('')
+  const user = useAuthStore(selectUser)
 
-function Modal({ open, onClose, title, children, size = 'md' }: {
-  open: boolean; onClose: () => void; title: string; children: React.ReactNode; size?: 'sm' | 'md' | 'lg'
-}) {
-  if (!open) return null
-  const widths = { sm: 'max-w-sm', md: 'max-w-lg', lg: 'max-w-2xl' }
+  const { data, isLoading } = useQuery({
+    queryKey: ['products-picker', search],
+    queryFn: () => productApi.list({
+      search,
+      is_active: true,
+      per_page: 20,
+    }).then((r) => r.data),
+    enabled: true,
+  })
+
+  const products: Product[] = data?.data ?? []
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-surface-900/40 backdrop-blur-sm" onClick={onClose} />
-      <div className={`relative bg-white rounded-2xl shadow-xl w-full ${widths[size]} max-h-[90vh] flex flex-col`}>
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-100">
-          <h3 className="font-display font-semibold text-surface-900">{title}</h3>
-          <button onClick={onClose} className="w-8 h-8 flex items-center justify-center rounded-lg text-surface-400 hover:bg-surface-100 transition-colors">
-            <X size={16} />
-          </button>
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ background: 'rgba(0,0,0,0.5)' }}>
+      <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-card-lg animate-fade-in flex flex-col max-h-[85vh]">
+
+        {/* Header */}
+        <div className="flex justify-between items-center px-5 py-4 border-b border-surface-100 shrink-0">
+          <div>
+            <h3 className="font-display font-semibold">Pilih Produk</h3>
+            <p className="text-xs text-surface-400 mt-0.5">Cari produk yang akan disesuaikan stoknya</p>
+          </div>
+          <button onClick={onClose} className="btn-icon btn-ghost"><X size={18} /></button>
         </div>
-        <div className="overflow-y-auto flex-1 px-6 py-5">{children}</div>
+
+        {/* Search */}
+        <div className="px-5 py-3 border-b border-surface-100 shrink-0">
+          <div className="relative">
+            <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-surface-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Cari nama, SKU, barcode..."
+              className="input pl-9"
+              autoFocus
+            />
+          </div>
+        </div>
+
+        {/* Product list */}
+        <div className="overflow-y-auto flex-1">
+          {isLoading ? (
+            <div className="p-4 space-y-2">
+              {Array.from({ length: 5 }).map((_, i) => (
+                <div key={i} className="h-14 rounded-xl bg-surface-100 animate-pulse" />
+              ))}
+            </div>
+          ) : products.length === 0 ? (
+            <div className="text-center py-12 text-surface-400">
+              <Package size={28} className="mx-auto mb-2 opacity-40" />
+              <p className="text-sm">Produk tidak ditemukan</p>
+            </div>
+          ) : (
+            <div className="p-2">
+              {products.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => onSelect(p)}
+                  className="w-full flex items-center gap-3 px-3 py-3 rounded-xl hover:bg-surface-50 transition-colors text-left group"
+                >
+                  {/* Thumbnail */}
+                  <div className="w-10 h-10 rounded-lg bg-surface-100 flex items-center justify-center shrink-0 overflow-hidden">
+                    {p.image
+                      ? <img src={p.image} alt={p.name} className="w-full h-full object-cover" />
+                      : <Package size={16} className="text-surface-300" />
+                    }
+                  </div>
+
+                  {/* Info */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-surface-800 truncate">{p.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {p.sku && <code className="text-xs text-surface-400">{p.sku}</code>}
+                      {p.category && (
+                        <span className="text-xs text-surface-400">{p.category.name}</span>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Stok */}
+                  <div className="text-right shrink-0">
+                    <p className={`text-sm font-bold ${p.is_low_stock ? 'text-warning-600' : 'text-surface-700'}`}>
+                      {p.stock} {p.unit}
+                    </p>
+                    {p.is_low_stock && (
+                      <p className="text-xs text-warning-500">stok menipis</p>
+                    )}
+                  </div>
+
+                  <ChevronRight size={16} className="text-surface-300 group-hover:text-surface-500 shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   )
 }
 
-function FormField({ label, required, error, children }: {
-  label: string; required?: boolean; error?: string; children: React.ReactNode
+// ── Step 2 Modal: Form Adjustment ─────────────────────────────────
+const adjSchema = z.object({
+  product_id: z.string(),
+  quantity: z.coerce.number().int().refine((v) => v !== 0, 'Tidak boleh 0'),
+  type: z.enum(['in', 'out', 'adjustment', 'damage']),
+  notes: z.string().min(3, 'Catatan minimal 3 karakter'),
+})
+
+type AdjForm = z.infer<typeof adjSchema>
+
+function AdjustmentFormModal({
+  productId,
+  productName,
+  currentStock,
+  unit,
+  suggestedQty,
+  onClose,
+  onBack,
+}: {
+  productId: string
+  productName: string
+  currentStock: number
+  unit: string
+  suggestedQty?: number
+  onClose: () => void
+  onBack?: () => void
 }) {
-  return (
-    <div className="space-y-1">
-      <label className="text-xs font-medium text-surface-600">
-        {label}{required && <span className="text-danger-500 ml-0.5">*</span>}
-      </label>
-      {children}
-      {error && <p className="text-xs text-danger-600">{error}</p>}
-    </div>
-  )
-}
+  const qc = useQueryClient()
 
-// ─── Constants ────────────────────────────────────────────────────────────────
-
-const MOVEMENT_ICONS: Record<string, React.ReactNode> = {
-  in: <ArrowDownCircle size={14} className="text-success-500" />,
-  out: <ArrowUpCircle size={14} className="text-danger-500" />,
-  adjustment: <RefreshCw size={14} className="text-primary-500" />,
-}
-const MOVEMENT_LABELS: Record<string, string> = {
-  in: 'Masuk', out: 'Keluar', adjustment: 'Penyesuaian',
-}
-
-// ─── Summary Cards ────────────────────────────────────────────────────────────
-
-function SummaryCards({ products, lowCount, isLoading }: {
-  products: Product[]
-  lowCount: number
-  isLoading: boolean
-}) {
-  const totalStock = products.reduce((sum, p) => sum + p.stock, 0)
-  const tracked = products.filter((p) => p.track_stock).length
-
-  const cards = [
-    {
-      label: 'Total Produk',
-      value: isLoading ? '…' : products.length,
-      sub: 'dalam halaman ini',
-      icon: <Package size={18} className="text-primary-600" />,
-      bg: 'bg-primary-50',
+  const { register, handleSubmit, watch, formState: { errors } } = useForm<AdjForm>({
+    resolver: zodResolver(adjSchema),
+    defaultValues: {
+      product_id: productId,
+      type: 'in',
+      quantity: suggestedQty ?? 0,
+      notes: suggestedQty
+        ? `Restock sesuai rekomendasi ML: ${suggestedQty} ${unit}`
+        : '',
     },
-    {
-      label: 'Total Stok',
-      value: isLoading ? '…' : totalStock.toLocaleString('id-ID'),
-      sub: 'unit di semua produk',
-      icon: <SlidersHorizontal size={18} className="text-success-600" />,
-      bg: 'bg-success-50',
+  })
+
+  const type = watch('type')
+  const quantity = watch('quantity') || 0
+
+  // Preview stok setelah adjustment
+  const newStock = (() => {
+    if (type === 'in') return currentStock + Math.abs(quantity)
+    if (type === 'out') return Math.max(0, currentStock - Math.abs(quantity))
+    if (type === 'damage') return Math.max(0, currentStock - Math.abs(quantity))
+    if (type === 'adjustment') return Math.max(0, currentStock + quantity) // bisa negatif
+    return currentStock
+  })()
+
+  const mutation = useMutation({
+    mutationFn: (data: AdjForm) => stockApi.adjustment({
+      product_id: data.product_id,
+      quantity: data.type === 'in'
+        ? Math.abs(data.quantity)
+        : -Math.abs(data.quantity),
+      type: data.type,
+      notes: data.notes,
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['stock-forecast'] })
+      qc.invalidateQueries({ queryKey: ['stock-movements'] })
+      qc.invalidateQueries({ queryKey: ['products'] })
+      toast.success('Stok berhasil disesuaikan.')
+      onClose()
     },
-    {
-      label: 'Stok Menipis',
-      value: isLoading ? '…' : lowCount,
-      sub: 'perlu restock segera',
-      icon: <TrendingDown size={18} className="text-warning-600" />,
-      bg: 'bg-warning-50',
-    },
-    {
-      label: 'Dipantau',
-      value: isLoading ? '…' : tracked,
-      sub: 'produk track stok aktif',
-      icon: <History size={18} className="text-surface-600" />,
-      bg: 'bg-surface-100',
-    },
+    onError: (err) => toast.error(getAxiosErrorMessage(err)),
+  })
+
+  const TYPE_OPTIONS = [
+    { value: 'in', label: 'Masuk / Restock', icon: <ArrowUpCircle size={14} className="text-success-500" /> },
+    { value: 'out', label: 'Keluar', icon: <ArrowDownCircle size={14} className="text-danger-500" /> },
+    { value: 'adjustment', label: 'Opname', icon: <SlidersHorizontal size={14} className="text-primary-500" /> },
+    { value: 'damage', label: 'Barang Rusak', icon: <X size={14} className="text-warning-500" /> },
   ]
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      {cards.map((c) => (
-        <div key={c.label} className="card p-4 flex items-center gap-3">
-          <div className={`w-10 h-10 rounded-xl ${c.bg} flex items-center justify-center shrink-0`}>
-            {c.icon}
-          </div>
-          <div className="min-w-0">
-            <p className="text-xs text-surface-400">{c.label}</p>
-            <p className="text-xl font-bold text-surface-900 leading-tight">{c.value}</p>
-            <p className="text-xs text-surface-400 truncate">{c.sub}</p>
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4"
+      style={{ background: 'rgba(0,0,0,0.5)' }}>
+      <div className="bg-white w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-card-lg animate-fade-in">
 
-// ─── Adjustment Modal ─────────────────────────────────────────────────────────
-
-function AdjustmentModal({ open, onClose, allProducts, preselectedId }: {
-  open: boolean
-  onClose: () => void
-  allProducts: Product[]
-  preselectedId?: string
-}) {
-  const toast = useToast()
-  const qc = useQueryClient()
-
-  const [adjProductId, setAdjProductId] = useState(preselectedId ?? '')
-  const [adjType, setAdjType] = useState<'in' | 'out' | 'adjustment'>('in')
-  const [adjQty, setAdjQty] = useState('')
-  const [adjNotes, setAdjNotes] = useState('')
-  const [adjError, setAdjError] = useState('')
-
-  const adjMut = useMutation({
-    mutationFn: stockApi.adjustment,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['stock-low'] })
-      qc.invalidateQueries({ queryKey: ['stock-movements'] })
-      qc.invalidateQueries({ queryKey: ['stock-products'] })
-      onClose()
-      setAdjProductId(''); setAdjQty(''); setAdjNotes(''); setAdjError('')
-      toast('Penyesuaian stok berhasil disimpan.')
-    },
-    onError: (e: any) => {
-      const msg = e.response?.data?.message ?? 'Terjadi kesalahan.'
-      setAdjError(msg)
-      toast(msg, 'error')
-    },
-  })
-
-  const handleAdj = () => {
-    if (!adjProductId) { setAdjError('Pilih produk terlebih dahulu.'); return }
-    if (!adjQty || Number(adjQty) <= 0) { setAdjError('Jumlah harus lebih dari 0.'); return }
-    setAdjError('')
-    adjMut.mutate({ product_id: adjProductId, type: adjType, quantity: Number(adjQty), notes: adjNotes })
-  }
-
-  const selected = allProducts.find((p) => p.id === adjProductId)
-
-  return (
-    <Modal open={open} onClose={onClose} title="Penyesuaian Stok" size="sm">
-      <div className="space-y-4">
-
-        <FormField label="Produk" required>
-          <select className={inputCls} value={adjProductId} onChange={(e) => setAdjProductId(e.target.value)}>
-            <option value="">— Pilih Produk —</option>
-            {allProducts.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}{p.sku ? ` (${p.sku})` : ''} — stok: {p.stock}
-              </option>
-            ))}
-          </select>
-        </FormField>
-
-        {/* Stok preview */}
-        {selected && (
-          <div className="flex items-center gap-3 p-3 rounded-xl bg-surface-50 border border-surface-100">
-            <div className="w-8 h-8 rounded-lg bg-surface-100 flex items-center justify-center shrink-0">
-              <Package size={15} className="text-surface-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-surface-800 truncate">{selected.name}</p>
-              {selected.sku && <p className="text-xs text-surface-400">{selected.sku}</p>}
-            </div>
-            <div className="text-right shrink-0">
-              <p className="text-base font-bold text-surface-900">{selected.stock}</p>
-              <p className="text-xs text-surface-400">{selected.unit ?? 'unit'}</p>
-            </div>
-          </div>
-        )}
-
-        <FormField label="Tipe Pergerakan" required>
-          <div className="grid grid-cols-3 gap-2">
-            {(['in', 'out', 'adjustment'] as const).map((t) => (
-              <button key={t} type="button" onClick={() => setAdjType(t)}
-                className={`py-2.5 rounded-xl border text-xs font-medium flex flex-col items-center gap-1.5 transition-all
-                  ${adjType === t ? 'border-primary-400 bg-primary-50 text-primary-700' : 'border-surface-200 text-surface-600 hover:border-surface-300'}`}>
-                {MOVEMENT_ICONS[t]}
-                {MOVEMENT_LABELS[t]}
-              </button>
-            ))}
-          </div>
-        </FormField>
-
-        <FormField label="Jumlah" required>
-          <input className={inputCls} type="number" min={1} value={adjQty}
-            onChange={(e) => setAdjQty(e.target.value)} placeholder="0" />
-        </FormField>
-
-        <FormField label="Catatan">
-          <textarea className={`${inputCls} resize-none`} rows={2} value={adjNotes}
-            onChange={(e) => setAdjNotes(e.target.value)} placeholder="Alasan penyesuaian..." />
-        </FormField>
-
-        {adjError && (
-          <div className="flex items-center gap-2 p-3 rounded-xl bg-danger-50 border border-danger-200">
-            <AlertTriangle size={14} className="text-danger-500 shrink-0" />
-            <p className="text-xs text-danger-700">{adjError}</p>
-          </div>
-        )}
-
-        <button onClick={handleAdj} disabled={adjMut.isPending}
-          className="w-full py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold transition-colors disabled:opacity-50">
-          {adjMut.isPending ? 'Menyimpan...' : 'Simpan Penyesuaian'}
-        </button>
-      </div>
-    </Modal>
-  )
-}
-
-// ─── History Modal ────────────────────────────────────────────────────────────
-
-function HistoryModal({ product, onClose }: { product: Product | null; onClose: () => void }) {
-  const { data: histData, isLoading } = useQuery({
-    queryKey: ['stock-history', product?.id],
-    queryFn: () => productsApi.stockHistory(product!.id),
-    enabled: !!product,
-  })
-
-  return (
-    <Modal open={!!product} onClose={onClose} title={`Riwayat Stok: ${product?.name ?? ''}`} size="md">
-      {isLoading && (
-        <div className="space-y-2">
-          {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-12 bg-surface-100 rounded-xl animate-pulse" />
-          ))}
-        </div>
-      )}
-      {!isLoading && (histData?.data ?? []).length === 0 && (
-        <p className="text-sm text-surface-400 text-center py-8">Belum ada riwayat untuk produk ini.</p>
-      )}
-      {!isLoading && (histData?.data ?? []).map((m: StockMovement) => (
-        <div key={m.id} className="flex items-center gap-3 py-2.5 border-b border-surface-50 last:border-0">
-          <div className="w-7 h-7 rounded-lg bg-surface-100 flex items-center justify-center shrink-0">
-            {MOVEMENT_ICONS[m.type]}
-          </div>
+        {/* Header */}
+        <div className="flex items-center gap-3 px-5 py-4 border-b border-surface-100">
+          {onBack && (
+            <button onClick={onBack} className="btn-icon btn-ghost -ml-1 shrink-0">
+              <ChevronRight size={18} className="rotate-180" />
+            </button>
+          )}
           <div className="flex-1 min-w-0">
-            <p className="text-sm text-surface-700">{m.notes ?? MOVEMENT_LABELS[m.type]}</p>
-            <p className="text-xs text-surface-400">{formatDate(m.created_at)}</p>
+            <h3 className="font-display font-semibold">Penyesuaian Stok</h3>
+            <p className="text-xs text-surface-400 truncate">{productName}</p>
           </div>
-          <div className="text-right shrink-0">
-            <p className={`text-sm font-semibold ${m.type === 'in' ? 'text-success-600' : m.type === 'out' ? 'text-danger-600' : 'text-primary-600'}`}>
-              {m.type === 'in' ? '+' : m.type === 'out' ? '-' : '~'}{m.quantity}
-            </p>
-            <p className="text-xs text-surface-400">{m.stock_before}→{m.stock_after}</p>
-          </div>
+          <button onClick={onClose} className="btn-icon btn-ghost shrink-0">
+            <X size={18} />
+          </button>
         </div>
-      ))}
-    </Modal>
-  )
-}
 
-// ─── Stock Table ──────────────────────────────────────────────────────────────
+        <form onSubmit={handleSubmit((d) => mutation.mutate(d))} className="p-5 space-y-4">
+          <input type="hidden" {...register('product_id')} />
 
-function StockTable({
-  products, meta, isLoading, page, onPageChange,
-  onAdjust, onHistory, lowStockIds,
-}: {
-  products: Product[]
-  meta?: ProductMeta
-  isLoading: boolean
-  page: number
-  onPageChange: (p: number) => void
-  onAdjust: (product: Product) => void
-  onHistory: (product: Product) => void
-  lowStockIds: Set<string>
-}) {
-  const getStockBadge = (p: Product, isAlertLow: boolean) => {
-    if (!p.track_stock) return <Badge variant="neutral">Tidak Dipantau</Badge>
-    if (p.stock === 0) return <Badge variant="danger">Habis</Badge>
-    if (isAlertLow) return <Badge variant="warning">Menipis</Badge>
-    return <Badge variant="success">Aman</Badge>
-  }
+          {/* Preview stok */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-surface-50 rounded-xl p-4 text-center">
+              <p className="text-xs text-surface-400 mb-1">Stok Sekarang</p>
+              <p className="text-2xl font-display font-bold text-surface-900">
+                {currentStock}
+                <span className="text-sm font-normal text-surface-400 ml-1">{unit}</span>
+              </p>
+            </div>
+            <div className={`rounded-xl p-4 text-center transition-colors ${newStock > currentStock ? 'bg-success-50' :
+              newStock < currentStock ? 'bg-danger-50' : 'bg-surface-50'
+              }`}>
+              <p className="text-xs text-surface-400 mb-1">Setelah Penyesuaian</p>
+              <p className={`text-2xl font-display font-bold transition-colors ${newStock > currentStock ? 'text-success-700' :
+                newStock < currentStock ? 'text-danger-700' : 'text-surface-900'
+                }`}>
+                {newStock}
+                <span className="text-sm font-normal ml-1">{unit}</span>
+              </p>
+            </div>
+          </div>
 
-  return (
-    <div className="card overflow-hidden">
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="bg-surface-50 border-b border-surface-100">
-              <th className="text-left px-4 py-3 text-xs font-semibold text-surface-500">PRODUK</th>
-              <th className="text-left px-4 py-3 text-xs font-semibold text-surface-500 hidden sm:table-cell">KATEGORI</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-surface-500">STOK</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-surface-500 hidden md:table-cell">MIN. STOK</th>
-              <th className="text-center px-4 py-3 text-xs font-semibold text-surface-500">STATUS</th>
-              <th className="px-4 py-3 text-xs font-semibold text-surface-500 hidden lg:table-cell text-right">TERAKHIR UPDATE</th>
-              <th className="px-4 py-3" />
-            </tr>
-          </thead>
-          <tbody>
-            {isLoading && Array.from({ length: 8 }).map((_, i) => (
-              <tr key={i} className="border-b border-surface-50">
-                <td className="px-4 py-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-surface-100 animate-pulse shrink-0" />
-                    <div className="space-y-1.5">
-                      <div className="w-32 h-3 rounded bg-surface-100 animate-pulse" />
-                      <div className="w-20 h-2.5 rounded bg-surface-100 animate-pulse" />
-                    </div>
-                  </div>
-                </td>
-                {[...Array(5)].map((_, j) => (
-                  <td key={j} className="px-4 py-3">
-                    <div className="h-3 w-16 mx-auto rounded bg-surface-100 animate-pulse" />
-                  </td>
-                ))}
-                <td className="px-4 py-3" />
-              </tr>
-            ))}
+          {/* Tipe */}
+          <div>
+            <label className="block text-xs font-medium text-surface-600 mb-2">Tipe Penyesuaian</label>
+            <div className="grid grid-cols-2 gap-2">
+              {TYPE_OPTIONS.map((opt) => (
+                <label
+                  key={opt.value}
+                  className={`flex items-center gap-2.5 p-3 rounded-xl border cursor-pointer transition-all ${type === opt.value
+                    ? 'border-primary-400 bg-primary-50 shadow-sm'
+                    : 'border-surface-200 hover:border-surface-300 hover:bg-surface-50'
+                    }`}
+                >
+                  <input {...register('type')} type="radio" value={opt.value} className="sr-only" />
+                  {opt.icon}
+                  <span className="text-xs font-medium text-surface-700">{opt.label}</span>
+                </label>
+              ))}
+            </div>
+          </div>
 
-            {!isLoading && products.length === 0 && (
-              <tr>
-                <td colSpan={7} className="px-4 py-16 text-center">
-                  <Package size={32} className="mx-auto text-surface-200 mb-3" />
-                  <p className="text-sm font-medium text-surface-400">Tidak ada produk ditemukan</p>
-                  <p className="text-xs text-surface-300 mt-1">Coba ubah filter atau kata kunci pencarian</p>
-                </td>
-              </tr>
+          {/* Jumlah */}
+          <div>
+            <label className="block text-xs font-medium text-surface-600 mb-1.5">
+              Jumlah{' '}
+              {type === 'adjustment' && (
+                <span className="text-surface-400 font-normal">(+ tambah / − kurang)</span>
+              )}
+            </label>
+            <input
+              {...register('quantity')}
+              type="number"
+              className="input text-xl font-bold text-center"
+              placeholder="0"
+              inputMode="numeric"
+            />
+            {errors.quantity && (
+              <p className="text-xs text-danger-500 mt-1">{errors.quantity.message}</p>
             )}
+          </div>
 
-            {!isLoading && products.map((p) => {
-              const isAlertLow = lowStockIds.has(p.id)
-              return (
-                <tr key={p.id} className={`border-b border-surface-50 transition-colors
-                ${isAlertLow
-                    ? 'bg-warning-50/40 hover:bg-warning-50/70'
-                    : 'hover:bg-surface-50/60'}`}>
-                  {/* Produk */}
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-9 h-9 rounded-xl bg-surface-100 shrink-0 overflow-hidden flex items-center justify-center
-                      ${isAlertLow ? 'bg-warning-100' : 'bg-surface-100'}`}>
-                        {p.image ? <img src={p.image} alt={p.name} className="w-full h-full object-cover" /> : <Package size={16} className={isAlertLow ? 'text-warning-600' : 'text-surface-400'} />}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5">
-                          <p className="font-medium text-surface-800 truncate max-w-[160px]">{p.name}</p>
-                          {isAlertLow && (
-                            <AlertTriangle size={12} className="text-warning-500 shrink-0" />
-                          )}
-                        </div>
-                        <p className="text-xs text-surface-400">{p.sku ?? '—'}</p>
-                      </div>
-                    </div>
-                  </td>
+          {/* Catatan */}
+          <div>
+            <label className="block text-xs font-medium text-surface-600 mb-1.5">
+              Catatan <span className="text-surface-400 font-normal">(wajib)</span>
+            </label>
+            <textarea
+              {...register('notes')}
+              className="input resize-none"
+              rows={3}
+              placeholder="Contoh: Pembelian dari supplier, stock opname, barang rusak saat pengiriman..."
+            />
+            {errors.notes && (
+              <p className="text-xs text-danger-500 mt-1">{errors.notes.message}</p>
+            )}
+          </div>
 
-                  {/* Kategori */}
-                  <td className="px-4 py-3 hidden sm:table-cell">
-                    {p.category
-                      ? <Badge variant="default">{p.category.name}</Badge>
-                      : <span className="text-xs text-surface-300">—</span>}
-                  </td>
-
-                  {/* Stok */}
-                  <td className="px-4 py-3 text-center">
-                    <span className={`text-base font-bold
-                    ${p.stock === 0 ? 'text-danger-600' : isAlertLow ? 'text-warning-600' : 'text-surface-800'}`}>
-                      {p.stock}
-                    </span>
-                    {p.unit && <span className="text-xs text-surface-400 ml-1">{p.unit}</span>}
-                  </td>
-
-                  {/* Min stok */}
-                  <td className="px-4 py-3 text-center hidden md:table-cell">
-                    <span className="text-sm text-surface-500">{p.min_stock}</span>
-                  </td>
-
-                  {/* Status */}
-                  <td className="px-4 py-3 text-center">
-                    {getStockBadge(p, isAlertLow)}
-                  </td>
-
-                  {/* Terakhir update */}
-                  <td className="px-4 py-3 text-right text-xs text-surface-400 hidden lg:table-cell whitespace-nowrap">
-                    {formatDate(p.updated_at)}
-                  </td>
-
-                  {/* Actions */}
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-1 justify-end">
-                      <button
-                        onClick={() => onHistory(p)}
-                        title="Riwayat stok"
-                        className="w-8 h-8 flex items-center justify-center rounded-lg text-surface-400 hover:text-primary-600 hover:bg-primary-50 transition-colors">
-                        <History size={15} />
-                      </button>
-                      <button
-                        onClick={() => onAdjust(p)}
-                        title="Sesuaikan stok"
-                        className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors
-                        ${isAlertLow
-                            ? 'text-warning-500 hover:text-warning-700 hover:bg-warning-100'
-                            : 'text-surface-400 hover:text-success-600 hover:bg-success-50'}`}>
-                        <SlidersHorizontal size={15} />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              )
-            })}
-
-          </tbody>
-        </table>
-      </div>
-
-      {/* Pagination */}
-      {meta && meta.last_page > 1 && (
-        <div className="flex items-center justify-between px-4 py-3 border-t border-surface-100">
-          <p className="text-xs text-surface-400">
-            {((meta.current_page - 1) * meta.per_page) + 1}–{Math.min(meta.current_page * meta.per_page, meta.total)} dari {meta.total} produk
-          </p>
-          <div className="flex items-center gap-1">
-            <button disabled={page <= 1} onClick={() => onPageChange(page - 1)}
-              className="w-8 h-8 flex items-center justify-center rounded-lg border border-surface-200 disabled:opacity-40 hover:bg-surface-50 transition-colors">
-              <ChevronLeft size={14} />
+          {/* Actions */}
+          <div className="flex gap-3 pt-1">
+            <button type="button" onClick={onClose} className="btn-secondary flex-1 justify-center">
+              Batal
             </button>
-            <span className="text-xs text-surface-500 px-2">Hal. {meta.current_page} / {meta.last_page}</span>
-            <button disabled={page >= meta.last_page} onClick={() => onPageChange(page + 1)}
-              className="w-8 h-8 flex items-center justify-center rounded-lg border border-surface-200 disabled:opacity-40 hover:bg-surface-50 transition-colors">
-              <ChevronRight size={14} />
+            <button
+              type="submit"
+              disabled={mutation.isPending}
+              className="btn-primary flex-1 justify-center"
+            >
+              {mutation.isPending
+                ? <><Loader2 size={15} className="animate-spin" />Menyimpan...</>
+                : 'Simpan Penyesuaian'
+              }
             </button>
           </div>
-        </div>
-      )}
+        </form>
+      </div>
     </div>
   )
 }
 
-// ─── Main Page Inner ──────────────────────────────────────────────────────────
-
-function StockPageInner() {
-  const [page, setPage] = useState(1)
-  const [search, setSearch] = useState('')
-  const [filterCat, setFilterCat] = useState('')
-  const [filterStatus, setFilterStatus] = useState<'low' | 'out' | ''>('')
-  const [adjModal, setAdjModal] = useState(false)
-  const [adjPreselect, setAdjPreselect] = useState<string | undefined>()
-  const [histProduct, setHistProduct] = useState<Product | null>(null)
-  const [bannerDismissed, setBannerDismissed] = useState(false)
-
-  // Shared hook — sudah polling otomatis tiap 3 menit
-  const { lowStockProducts, lowStockCount, hasAlert } = useStockAlert()
-
-  // Fetch categories for filter dropdown
-  const { data: categories = [] } = useQuery({
-    queryKey: ['categories'],
-    queryFn: categoriesApi.list,
-  })
-
-  // Fetch all products (stock view)
-  const params = {
-    search: search || undefined,
-    category_id: filterCat || undefined,
-    low_stock: filterStatus === 'low' ? '1' : undefined,
-    out_of_stock: filterStatus === 'out' ? '1' : undefined,
-    track_stock: '1',
-    page,
-    per_page: 15,
-    sort_by: 'stock',
-    sort_dir: 'asc',
-  }
-
-  const { data, isLoading } = useQuery({
-    queryKey: ['stock-products', params],
-    queryFn: () => productsApi.list(params),
-    placeholderData: (prev) => prev,
-  })
-
-  // All products for adjustment modal select
-  const { data: allProductsData } = useQuery({
-    queryKey: ['stock-products', { per_page: 200, sort_by: 'name', sort_dir: 'asc' }],
-    queryFn: () => productsApi.list({ per_page: 200, sort_by: 'name', sort_dir: 'asc' }),
-  })
-  const allProducts = allProductsData?.data ?? []
-
-  const products = data?.data ?? []
-  const meta = data?.meta
-  const allCats = categories.flatMap((c) => [c, ...(c.children ?? [])])
-
-  // Set low stock IDs untuk highlight tabel
-  const lowStockIds = new Set(lowStockProducts.map((p) => p.id))
-
-  // Reset banner saat data berubah (misal setelah adjustment berhasil)
-  const prevHasAlert = !hasAlert
-  if (!hasAlert && !prevHasAlert) setBannerDismissed(false)
-
-  const handleAdjust = (p: Product) => {
-    setAdjPreselect(p.id)
-    setAdjModal(true)
-  }
-
-  const handleAdjClose = () => {
-    setAdjModal(false)
-    setAdjPreselect(undefined)
-  }
+// ── Forecast Card ─────────────────────────────────────────────────
+function ForecastCard({
+  item,
+  onRestock,
+}: {
+  item: ForecastItem
+  onRestock: (item: ForecastItem) => void
+}) {
+  const cfg = RISK_CONFIG[item.risk_level]
 
   return (
-    <div className="space-y-5">
-
-      {/* Page Header */}
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="font-display text-xl font-bold text-surface-900">Manajemen Stok</h2>
-          <p className="text-sm text-surface-400 mt-0.5">Pantau, filter, dan sesuaikan stok produk toko Anda</p>
+    <div className={`card border-l-4 ${cfg.card} hover:shadow-card-md transition-shadow`}>
+      <div className="flex items-start justify-between gap-2 mb-3">
+        <div className="flex-1 min-w-0">
+          <p className="font-medium text-surface-800 truncate text-sm">{item.product_name}</p>
+          {item.product_sku && (
+            <code className="text-xs text-surface-400">{item.product_sku}</code>
+          )}
         </div>
-        <button
-          onClick={() => { setAdjPreselect(undefined); setAdjModal(true) }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold transition-colors shrink-0">
-          <SlidersHorizontal size={15} />
-          Penyesuaian Stok
-        </button>
+        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${cfg.badge}`}>
+          {cfg.icon}{cfg.label}
+        </span>
       </div>
 
-      {/* ── Banner Alert Stok Menipis ── */}
-      {hasAlert && !bannerDismissed && (
-        <div className="flex items-start gap-3 px-4 py-3.5 rounded-2xl bg-warning-50 border border-warning-200 animate-[slideIn_0.2s_ease-out]">
-          <div className="w-8 h-8 rounded-xl bg-warning-100 flex items-center justify-center shrink-0 mt-0.5">
-            <AlertTriangle size={16} className="text-warning-600" />
-          </div>
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-semibold text-warning-800">
-              {lowStockCount} produk membutuhkan restock segera
-            </p>
-            <p className="text-xs text-warning-600 mt-0.5">
-              {lowStockProducts.slice(0, 3).map((p) => p.name).join(', ')}
-              {lowStockCount > 3 ? ` dan ${lowStockCount - 3} lainnya` : ''}
-            </p>
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              onClick={() => { setFilterStatus('low'); setBannerDismissed(true) }}
-              className="px-3 py-1.5 rounded-lg bg-warning-600 hover:bg-warning-700 text-white text-xs font-semibold transition-colors">
-              Tampilkan
-            </button>
-            <button
-              onClick={() => setBannerDismissed(true)}
-              className="w-7 h-7 flex items-center justify-center rounded-lg text-warning-400 hover:text-warning-600 hover:bg-warning-100 transition-colors">
-              <X size={14} />
-            </button>
-          </div>
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="bg-surface-50 rounded-lg p-2 text-center">
+          <p className="text-xs text-surface-400 mb-0.5">Stok</p>
+          <p className={`font-bold text-sm ${item.current_stock <= item.min_stock ? 'text-danger-600' : 'text-surface-800'}`}>
+            {item.current_stock}
+            <span className="text-xs font-normal text-surface-400 ml-0.5">{item.unit}</span>
+          </p>
         </div>
-      )}
-
-      {/* Summary Cards */}
-      <SummaryCards products={products} lowCount={lowStockCount} isLoading={isLoading} />
-
-      {/* Toolbar: search + filter */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
-          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400" />
-          <input
-            className={`${inputCls} pl-9`}
-            placeholder="Cari nama produk atau SKU..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(1) }}
-          />
+        <div className="bg-surface-50 rounded-lg p-2 text-center">
+          <p className="text-xs text-surface-400 mb-0.5">Sisa</p>
+          <p className={`font-bold text-sm ${item.days_until_empty <= 3 ? 'text-danger-600' :
+            item.days_until_empty <= 7 ? 'text-warning-600' : 'text-surface-800'
+            }`}>
+            ~{item.days_until_empty}
+            <span className="text-xs font-normal text-surface-400 ml-0.5">hari</span>
+          </p>
         </div>
-
-        <div className="flex gap-2 flex-wrap shrink-0">
-          <div className="relative">
-            <Filter size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-surface-400 pointer-events-none" />
-            <select
-              className={`${inputCls} pl-8 w-auto`}
-              value={filterCat}
-              onChange={(e) => { setFilterCat(e.target.value); setPage(1) }}>
-              <option value="">Semua Kategori</option>
-              {allCats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
-          </div>
-
-          <div className="flex rounded-xl border border-surface-200 overflow-hidden bg-white text-sm">
-            {[
-              { value: '', label: 'Semua' },
-              { value: 'low', label: 'Menipis' },
-              { value: 'out', label: 'Habis' },
-            ].map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => { setFilterStatus(opt.value as any); setPage(1) }}
-                className={`px-3 py-2 font-medium transition-all whitespace-nowrap
-                  ${filterStatus === opt.value
-                    ? opt.value === 'out' ? 'bg-danger-600 text-white'
-                      : opt.value === 'low' ? 'bg-warning-500 text-white'
-                        : 'bg-primary-600 text-white'
-                    : 'text-surface-500 hover:bg-surface-50'}`}>
-                {opt.value === 'low' && lowStockCount > 0 && filterStatus !== 'low' && (
-                  <span className="inline-flex items-center justify-center w-4 h-4 rounded-full bg-warning-100 text-warning-700 text-[10px] font-bold mr-1.5">
-                    {lowStockCount}
-                  </span>
-                )}
-                {opt.label}
-              </button>
-            ))}
-          </div>
+        <div className="bg-surface-50 rounded-lg p-2 text-center">
+          <p className="text-xs text-surface-400 mb-0.5">Pakai/hari</p>
+          <p className="font-bold text-sm text-surface-800">
+            {item.avg_daily_usage}
+            <span className="text-xs font-normal text-surface-400 ml-0.5">{item.unit}</span>
+          </p>
         </div>
       </div>
 
-      {/* Stock Table */}
-      <StockTable
-        products={products}
-        meta={meta}
-        isLoading={isLoading}
-        page={page}
-        onPageChange={setPage}
-        onAdjust={handleAdjust}
-        onHistory={setHistProduct}
-        lowStockIds={lowStockIds}
-      />
+      <div className="flex items-center gap-1.5 text-xs text-surface-400 mb-3">
+        <Clock size={11} />
+        <span>Habis: <strong className="text-surface-600">{item.estimated_empty_date}</strong></span>
+      </div>
 
-      {/* Adjustment Modal */}
-      <AdjustmentModal
-        open={adjModal}
-        onClose={handleAdjClose}
-        allProducts={allProducts}
-        preselectedId={adjPreselect}
-      />
-
-      {/* History Modal */}
-      <HistoryModal product={histProduct} onClose={() => setHistProduct(null)} />
+      <button
+        onClick={() => onRestock(item)}
+        className="btn-primary w-full justify-center py-2 text-sm gap-1.5"
+      >
+        <ArrowUpCircle size={14} />
+        Restock {item.recommended_restock} {item.unit}
+      </button>
     </div>
   )
 }
 
-// ─── Export ───────────────────────────────────────────────────────────────────
+// ── Main Page ─────────────────────────────────────────────────────
+type ModalState =
+  | { step: 'closed' }
+  | { step: 'picker' }
+  | { step: 'form'; product: Product }
+  | { step: 'forecast-form'; item: ForecastItem }
 
 export default function StockPage() {
+  const user = useAuthStore(selectUser)
+  const [modal, setModal] = useState<ModalState>({ step: 'closed' })
+  const [activeRisk, setActiveRisk] = useState<'all' | 'critical' | 'high' | 'medium' | 'low'>('all')
+  const [page, setPage] = useState(1)
+
+  // ── Forecast dari Python ML ───────────────────────────────────
+  const {
+    data: forecastData,
+    isLoading: forecastLoading,
+    isFetching: forecastFetching,
+    refetch: refetchForecast,
+    dataUpdatedAt,
+  } = useQuery({
+    queryKey: ['stock-forecast'],
+    queryFn: () => analyticsApi.stockForecast(user!.store_id).then((r) => r.data as ForecastData),
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+  })
+
+  // ── Riwayat mutasi stok ───────────────────────────────────────
+  const { data: movementsData, isLoading: movementsLoading } = useQuery({
+    queryKey: ['stock-movements', page],
+    queryFn: () => stockApi.movements({ page }).then((r) => r.data),
+  })
+
+  const movementsMeta = movementsData
+    ? { current_page: movementsData.current_page, last_page: movementsData.last_page, per_page: movementsData.per_page, total: movementsData.total }
+    : undefined
+
+  const forecast = forecastData
+  const totalAtRisk = forecast?.total_at_risk ?? 0
+  const riskCounts = {
+    critical: forecast?.by_risk.critical.length ?? 0,
+    high: forecast?.by_risk.high.length ?? 0,
+    medium: forecast?.by_risk.medium.length ?? 0,
+    low: forecast?.by_risk.low.length ?? 0,
+  }
+
+  const displayedItems: ForecastItem[] = (() => {
+    if (!forecast) return []
+    if (activeRisk === 'all') return [
+      ...forecast.by_risk.critical,
+      ...forecast.by_risk.high,
+      ...forecast.by_risk.medium,
+      ...forecast.by_risk.low,
+    ]
+    return forecast.by_risk[activeRisk]
+  })()
+
+  const MOVEMENT_ICONS: Record<string, React.ReactNode> = {
+    sale: <ArrowDownCircle size={14} className="text-danger-500" />,
+    in: <ArrowUpCircle size={14} className="text-success-500" />,
+    return: <ArrowUpCircle size={14} className="text-primary-500" />,
+    adjustment: <SlidersHorizontal size={14} className="text-amber-500" />,
+    damage: <X size={14} className="text-warning-500" />,
+    out: <ArrowDownCircle size={14} className="text-surface-400" />,
+  }
+
+  const MOVEMENT_LABELS: Record<string, string> = {
+    sale: 'Penjualan',
+    in: 'Masuk',
+    out: 'Keluar',
+    return: 'Retur',
+    adjustment: 'Opname',
+    damage: 'Rusak',
+  }
+
   return (
-    <ToastProvider>
-      <StockPageInner />
-    </ToastProvider>
+    <div className="space-y-6">
+
+      {/* ── Header ─────────────────────────────────────────────── */}
+      <div className="flex flex-col xs:flex-row xs:items-center justify-between gap-3">
+        <div>
+          <h2 className="font-display text-xl font-bold text-surface-900">Manajemen Stok</h2>
+          <p className="text-xs text-surface-400 mt-0.5">Prediksi ML & riwayat mutasi stok</p>
+        </div>
+        <button
+          onClick={() => setModal({ step: 'picker' })}
+          className="btn-primary shrink-0 self-start xs:self-auto gap-1.5"
+        >
+          <SlidersHorizontal size={16} />
+          Penyesuaian Manual
+        </button>
+      </div>
+
+      {/* ── ML Forecast ────────────────────────────────────────── */}
+      <div>
+        <div className="flex items-center justify-between mb-3 gap-3">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-primary-50 flex items-center justify-center">
+              <Brain size={18} className="text-primary-600" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-surface-900 text-sm">Prediksi Stok Habis</h3>
+              <p className="text-xs text-surface-400">
+                {dataUpdatedAt
+                  ? `Update ${new Date(dataUpdatedAt).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' })}`
+                  : 'Powered by ML Analytics'
+                }
+              </p>
+            </div>
+          </div>
+          {/* Risk filter pills */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {[
+              { key: 'all', label: `Semua (${totalAtRisk})`, cls: 'bg-surface-900 text-white' },
+              { key: 'critical', label: `Kritis (${riskCounts.critical})`, cls: 'bg-danger-500 text-white' },
+              { key: 'high', label: `Tinggi (${riskCounts.high})`, cls: 'bg-warning-500 text-white' },
+              { key: 'medium', label: `Sedang (${riskCounts.medium})`, cls: 'bg-amber-400 text-white' },
+              { key: 'low', label: `Rendah (${riskCounts.low})`, cls: 'bg-surface-400 text-white' },
+            ].map((btn) => (
+              <button
+                key={btn.key}
+                onClick={() => setActiveRisk(btn.key as typeof activeRisk)}
+                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-all ${activeRisk === btn.key
+                  ? btn.cls
+                  : 'bg-surface-100 text-surface-600 hover:bg-surface-200'
+                  }`}
+              >
+                {btn.label}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => refetchForecast()}
+            disabled={forecastFetching}
+            className="btn-icon btn-ghost"
+            title="Refresh prediksi"
+          >
+            <RefreshCw size={16} className={forecastFetching ? 'animate-spin' : ''} />
+          </button>
+        </div>
+
+        {/* Cards */}
+        {forecastLoading ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <div key={i} className="card h-52 animate-pulse bg-surface-100" />
+            ))}
+          </div>
+        ) : !forecast || totalAtRisk === 0 ? (
+          <div className="card text-center py-14">
+            <ShieldCheck size={36} className="mx-auto mb-3 text-success-500 opacity-60" />
+            <p className="font-semibold text-surface-700">Semua stok aman</p>
+            <p className="text-sm text-surface-400 mt-1">
+              Tidak ada produk yang diprediksi habis dalam {forecast?.forecast_days ?? 30} hari ke depan
+            </p>
+          </div>
+        ) : displayedItems.length === 0 ? (
+          <div className="card text-center py-10 text-surface-400">
+            <Package size={28} className="mx-auto mb-2 opacity-40" />
+            <p className="text-sm">Tidak ada produk di kategori ini</p>
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {displayedItems.map((item) => (
+              <ForecastCard
+                key={item.product_id}
+                item={item}
+                onRestock={(i) => setModal({ step: 'forecast-form', item: i })}
+              />
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Riwayat Mutasi ─────────────────────────────────────── */}
+      <div>
+        <h3 className="font-semibold text-surface-900 mb-3">Riwayat Mutasi Stok</h3>
+        <div className="table-wrapper">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Produk</th>
+                <th>Tipe</th>
+                <th className="text-center">Qty</th>
+                <th className="text-center hidden sm:table-cell">Sebelum</th>
+                <th className="text-center hidden sm:table-cell">Sesudah</th>
+                <th className="hidden md:table-cell">Catatan</th>
+                <th className="hidden lg:table-cell">Waktu</th>
+              </tr>
+            </thead>
+            <tbody>
+              {movementsLoading && Array.from({ length: 6 }).map((_, i) => (
+                <tr key={i}>
+                  {[160, 80, 50, 50, 50, 120, 110].map((w, j) => (
+                    <td key={j}>
+                      <div className="h-4 rounded bg-surface-100 animate-pulse" style={{ width: w }} />
+                    </td>
+                  ))}
+                </tr>
+              ))}
+
+              {!movementsLoading && (movementsData?.data ?? []).map((m: any) => (
+                <tr key={m.id}>
+                  <td>
+                    <p className="text-sm font-medium text-surface-800 truncate max-w-[150px]">
+                      {m.product?.name ?? '—'}
+                    </p>
+                    {m.product?.sku && (
+                      <code className="text-xs text-surface-400">{m.product.sku}</code>
+                    )}
+                  </td>
+                  <td>
+                    <div className="flex items-center gap-1.5">
+                      {MOVEMENT_ICONS[m.type] ?? <Package size={14} className="text-surface-400" />}
+                      <span className="text-xs text-surface-600">
+                        {MOVEMENT_LABELS[m.type] ?? m.type}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="text-center">
+                    <span className={`font-semibold text-sm ${m.quantity > 0 ? 'text-success-600' : 'text-danger-600'
+                      }`}>
+                      {m.quantity > 0 ? '+' : ''}{m.quantity}
+                    </span>
+                  </td>
+                  <td className="text-center hidden sm:table-cell text-xs text-surface-500">
+                    {m.stock_before}
+                  </td>
+                  <td className="text-center hidden sm:table-cell text-xs font-medium text-surface-700">
+                    {m.stock_after}
+                  </td>
+                  <td className="hidden md:table-cell text-xs text-surface-500 max-w-[140px] truncate">
+                    {m.notes ?? '—'}
+                  </td>
+                  <td className="hidden lg:table-cell text-xs text-surface-400 whitespace-nowrap">
+                    {formatDateTime(m.created_at)}
+                  </td>
+                </tr>
+              ))}
+
+              {!movementsLoading && (movementsData?.data ?? []).length === 0 && (
+                <tr>
+                  <td colSpan={7} className="text-center py-12 text-surface-400">
+                    <Package size={24} className="mx-auto mb-2 opacity-40" />
+                    <p className="text-sm">Belum ada riwayat mutasi</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Pagination */}
+        {movementsMeta && movementsMeta.last_page > 1 && (
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-surface-400">
+              {(movementsMeta.current_page - 1) * movementsMeta.per_page + 1}–
+              {Math.min(movementsMeta.current_page * movementsMeta.per_page, movementsMeta.total)} dari {movementsMeta.total}
+            </p>
+            <div className="flex items-center gap-1">
+              <button disabled={page <= 1} onClick={() => setPage(page - 1)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-surface-200 disabled:opacity-40 hover:bg-surface-50">
+                <ChevronLeft size={15} />
+              </button>
+              {Array.from({ length: movementsMeta.last_page }, (_, i) => i + 1)
+                .filter((n) => Math.abs(n - page) <= 2)
+                .map((n) => (
+                  <button key={n} onClick={() => setPage(n)}
+                    className={`w-8 h-8 rounded-lg text-sm font-medium transition-colors ${n === page ? 'bg-primary-600 text-white' : 'border border-surface-200 text-surface-600 hover:bg-surface-50'
+                      }`}>
+                    {n}
+                  </button>
+                ))}
+              <button disabled={page >= movementsMeta.last_page} onClick={() => setPage(page + 1)}
+                className="w-8 h-8 flex items-center justify-center rounded-lg border border-surface-200 disabled:opacity-40 hover:bg-surface-50">
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ── Modals ─────────────────────────────────────────────── */}
+
+      {/* Step 1: Pilih produk (penyesuaian manual) */}
+      {modal.step === 'picker' && (
+        <ProductPickerModal
+          onSelect={(product) => setModal({ step: 'form', product })}
+          onClose={() => setModal({ step: 'closed' })}
+        />
+      )}
+
+      {/* Step 2: Form adjustment (dari picker) */}
+      {modal.step === 'form' && (
+        <AdjustmentFormModal
+          productId={modal.product.id}
+          productName={modal.product.name}
+          currentStock={modal.product.stock}
+          unit={modal.product.unit}
+          onClose={() => setModal({ step: 'closed' })}
+          onBack={() => setModal({ step: 'picker' })}
+        />
+      )}
+
+      {/* Form adjustment langsung dari forecast card */}
+      {modal.step === 'forecast-form' && (
+        <AdjustmentFormModal
+          productId={modal.item.product_id}
+          productName={modal.item.product_name}
+          currentStock={modal.item.current_stock}
+          unit={modal.item.unit}
+          suggestedQty={modal.item.recommended_restock}
+          onClose={() => setModal({ step: 'closed' })}
+        />
+      )}
+    </div>
   )
 }

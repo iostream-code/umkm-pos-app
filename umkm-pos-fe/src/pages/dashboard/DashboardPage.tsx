@@ -36,7 +36,7 @@ function StatCard({
             {trend === 'down' && <ArrowDownRight size={13} className="text-danger-500 shrink-0" />}
             {trendValue && (
               <span className={`text-xs font-semibold ${trend === 'up' ? 'text-success-600' :
-                  trend === 'down' ? 'text-danger-600' : 'text-surface-500'
+                trend === 'down' ? 'text-danger-600' : 'text-surface-500'
                 }`}>{trendValue}</span>
             )}
             {sub && <span className="text-xs text-surface-400">{sub}</span>}
@@ -82,6 +82,7 @@ export default function DashboardPage() {
   })
 
   const s = data?.summary
+  const isAnalytics = data?.source === 'analytics' // dari Python service
 
   // Format data chart — pastikan field sesuai response backend
   const areaData = (data?.weekly_sales ?? []).map((d) => ({
@@ -116,6 +117,14 @@ export default function DashboardPage() {
     <div className="space-y-5">
 
       {/* ── Summary Cards ─────────────────────────────────────── */}
+      <div className="flex items-center justify-between mb-1">
+        {isAnalytics && (
+          <span className="inline-flex items-center gap-1.5 text-xs text-success-600 bg-success-50 px-2.5 py-1 rounded-full font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-success-500 animate-pulse-dot" />
+            Powered by Analytics AI
+          </span>
+        )}
+      </div>
       <div className="grid grid-cols-1 xs:grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
         <StatCard
           label="Pendapatan Hari Ini"
@@ -265,7 +274,7 @@ export default function DashboardPage() {
                 return (
                   <div key={i}>
                     <div className="flex items-center gap-3 mb-1">
-                      <span className={`text-xs font-bold w-4 shrink-0 ${i === 0 ? 'text-amber-500' : i === 1 ? 'text-surface-400' : i === 2 ? 'text-orange-400' : 'text-surface-300'
+                      <span className={`text-xs font-bold w-4 shrink-0 ${i === 0 ? 'text-[#16DB93]' : i === 1 ? 'text-[#83E377]' : i === 2 ? 'text-[#B9E769]' : 'text-surface-300'
                         }`}>#{i + 1}</span>
                       <p className="text-sm text-surface-700 flex-1 truncate">{p.product_name}</p>
                       <div className="text-right shrink-0">

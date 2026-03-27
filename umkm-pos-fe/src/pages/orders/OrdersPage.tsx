@@ -300,7 +300,7 @@ export default function OrdersPage() {
       date_from: dateFrom || undefined,
       date_to: dateTo || undefined,
       page,
-      per_page: 15,
+      per_page: 10,
     }).then((r) => r.data),
   })
 
@@ -334,8 +334,8 @@ export default function OrdersPage() {
         <button
           onClick={() => setShowFilter(!showFilter)}
           className={`flex items-center gap-2 px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors shrink-0 ${hasFilter || showFilter
-              ? 'bg-primary-50 border-primary-300 text-primary-700'
-              : 'bg-white border-surface-200 text-surface-600 hover:bg-surface-50'
+            ? 'bg-primary-50 border-primary-300 text-primary-700'
+            : 'bg-white border-surface-200 text-surface-600 hover:bg-surface-50'
             }`}
         >
           <Filter size={15} />Filter

@@ -1,0 +1,65 @@
+services:
+  # 1. Database Utama (Shared)
+  db:
+    image: postgresql:18.3.1
+    container_name: smartpos-db
+    restart: always
+    environment:
+      POSTGRESQL_DATABASE: umkm_pos_db
+      POSTGRESQL_ROOT_PASSWORD: password_rahasia
+    volumes:
+      - db_data:/var/lib/postgresql
+    networks:
+      - smartpos-network
+
+  # 2. Backend Laravel (Logika Bisnis & Transaksi)
+  laravel-api:
+    build:
+      context: ./backend-laravel
+      dockerfile: Dockerfile
+    container_name: laravel-app
+    restart: always
+    depends_on:
+      - db
+    volumes:
+      - ./backend-laravel:/var/www
+    networks:
+      - smartpos-network
+
+  # 3. Backend Django (Analitik / Modul Khusus)
+  django-api:
+    build:
+      context: ./backend-django
+      dockerfile: Dockerfile
+    container_name: django-app
+    restart: always
+    depends_on:
+      - db
+    volumes:
+      - ./backend-django:/app
+    networks:
+      - smartpos-network
+
+  # 4. Nginx (Gerbang Utama & Hosting React)
+  nginx:
+    image: nginx:stable-alpine
+    container_name: nginx-proxy
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./frontend/dist:/var/www/frontend  # Path hasil build React
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf
+    depends_on:
+      - laravel-api
+      - django-api
+    networks:
+      - smartpos-network
+
+networks:
+  smartpos-network:
+    driver: bridge
+
+volumes:
+  db_data:

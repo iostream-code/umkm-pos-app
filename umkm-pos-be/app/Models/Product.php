@@ -66,7 +66,7 @@ class Product extends Model
     public function scopeLowStock($query)
     {
         return $query->where('track_stock', true)
-                     ->whereColumn('stock', '<=', 'min_stock');
+            ->whereColumn('stock', '<=', 'min_stock');
     }
 
     // ── Relations ────────────────────────────────────────────────

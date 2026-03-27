@@ -12,7 +12,8 @@ import toast from 'react-hot-toast'
 
 // ── Product Card ──────────────────────────────────────────────────
 function ProductCard({ product, onAdd }: { product: Product; onAdd: (p: Product) => void }) {
-  const isOutOfStock = product.track_stock && product.stock === 0
+  const isOutOfStock = product.is_low_stock ?? (product.track_stock && product.stock <= (product.min_stock ?? 0));
+
   return (
     <button
       onClick={() => !isOutOfStock && onAdd(product)}
@@ -30,13 +31,13 @@ function ProductCard({ product, onAdd }: { product: Product; onAdd: (p: Product)
           <Package size={20} className="text-surface-300" />
         </div>
       )}
-      <p className="text-xs sm:text-sm font-medium text-surface-800 line-clamp-2 leading-tight mb-1">
-        {product.name}
-      </p>
-      <p className="text-xs sm:text-sm font-bold text-primary-600">{formatRupiah(product.price)}</p>
+      <div className="flex justify-between items-start mb-1">
+        <h3 className="font-medium text-surface-900 leading-tight line-clamp-2">{product.name}</h3>
+      </div>
+
       {product.track_stock && (
-        <p className={`text-xs mt-0.5 ${product.is_low_stock ? 'text-warning-500' : 'text-surface-400'}`}>
-          Stok: {product.stock} {product.unit}
+        <p className={`text-xs mt-0.5 font-medium ${isOutOfStock ? 'text-orange-600' : 'text-surface-400'}`}>
+          {isOutOfStock ? '⚠️ ' : ''}Stok: {product.stock} {product.unit}
         </p>
       )}
     </button>
@@ -363,6 +364,7 @@ export default function PosPage() {
       cart.clearCart()
       setShowPayment(false)
       setMobileView('products')
+      window.location.reload()
     },
     onError: (err: any) => {
       toast.error(err?.response?.data?.message ?? 'Transaksi gagal.')
