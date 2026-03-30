@@ -13,7 +13,7 @@ return new class extends Migration
         DB::statement("CREATE TYPE user_role AS ENUM ('owner', 'manager', 'cashier')");
 
         Schema::create('users', function (Blueprint $table) {
-            $table->uuid('id')->primary()->default(DB::raw('uuid_generate_v4()'));
+            $table->uuid('id')->primary();
             $table->foreignUuid('store_id')->constrained('stores')->cascadeOnDelete();
             $table->string('name');
             $table->string('email')->unique();

@@ -9,11 +9,8 @@ return new class extends Migration
 {
     public function up(): void
     {
-        // Enable UUID extension (PostgreSQL)
-        DB::statement('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"');
-
         Schema::create('stores', function (Blueprint $table) {
-            $table->uuid('id')->primary()->default(DB::raw('uuid_generate_v4()'));
+            $table->uuid('id')->primary();
             $table->string('name');
             $table->text('address')->nullable();
             $table->string('phone', 20)->nullable();

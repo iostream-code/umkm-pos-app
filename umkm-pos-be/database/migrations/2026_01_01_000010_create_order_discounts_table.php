@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('order_discounts', function (Blueprint $table) {
-            $table->uuid('id')->primary()->default(DB::raw('uuid_generate_v4()'));
+            $table->uuid('id')->primary();
             $table->foreignUuid('order_id')->constrained('orders')->cascadeOnDelete();
             $table->foreignUuid('discount_id')->nullable()->constrained('discounts')->nullOnDelete();
             $table->string('discount_name')->comment('Snapshot nama diskon');

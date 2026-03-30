@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('categories', function (Blueprint $table) {
-            $table->uuid('id')->primary()->default(DB::raw('uuid_generate_v4()'));
+            $table->uuid('id')->primary();
             $table->foreignUuid('store_id')->constrained('stores')->cascadeOnDelete();
             $table->uuid('parent_id')->nullable()->comment('Untuk sub-kategori');
             $table->string('name');

@@ -10,7 +10,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('customers', function (Blueprint $table) {
-            $table->uuid('id')->primary()->default(DB::raw('uuid_generate_v4()'));
+            $table->uuid('id')->primary();
             $table->foreignUuid('store_id')->constrained('stores')->cascadeOnDelete();
             $table->string('name');
             $table->string('phone', 20)->nullable();
