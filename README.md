@@ -395,7 +395,7 @@ Proyek ini dilisensikan di bawah **MIT License** — lihat file [LICENSE](LICENS
 
 | Avatar | Nama | Role |
 |:------:|:----:|:----:|
-| ![Dev]([umkm-pos-asset/profile.jpeg](https://placehold.co/60x60/6366f1/white?text=IC)) | **iostream-code** | Full Stack Developer |
+| ![Dev](https://placehold.co/60x60/6366f1/white?text=IC) | **iostream-code** | Full Stack Developer |
 
 </div>
 
