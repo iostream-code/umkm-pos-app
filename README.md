@@ -11,7 +11,7 @@
 [![Laravel](https://img.shields.io/badge/Laravel-11.x-FF2D20?style=for-the-badge&logo=laravel&logoColor=white)](https://laravel.com)
 [![React](https://img.shields.io/badge/React-18.x-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev)
 [![Django](https://img.shields.io/badge/Django-5.x-092E20?style=for-the-badge&logo=django&logoColor=white)](https://djangoproject.com)
-[![MySQL](https://img.shields.io/badge/MySQL-8.0-4479A1?style=for-the-badge&logo=mysql&logoColor=white)](https://mysql.com)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](https://postgresql.org)
 [![Redis](https://img.shields.io/badge/Redis-Cache-DC382D?style=for-the-badge&logo=redis&logoColor=white)](https://redis.io)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge)](LICENSE)
 
@@ -55,7 +55,7 @@
 │                             │                               │
 │                    ┌────────▼────────┐                      │
 │                    │   Database      │                      │
-│                    │  MySQL + Redis  │                      │
+│                    │ PostgreSQL+Redis │                      │
 │                    └─────────────────┘                      │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -283,9 +283,9 @@ APP_ENV=local
 APP_KEY=
 APP_URL=http://localhost:8000
 
-DB_CONNECTION=mysql
+DB_CONNECTION=pgsql
 DB_HOST=127.0.0.1
-DB_PORT=3306
+DB_PORT=5432
 DB_DATABASE=smartpos
 DB_USERNAME=root
 DB_PASSWORD=
@@ -309,7 +309,7 @@ VITE_ANALYTICS_URL=http://localhost:8001/api
 ```env
 DEBUG=True
 SECRET_KEY=your-django-secret-key
-DATABASE_URL=mysql://root:password@localhost:3306/smartpos_analytics
+DATABASE_URL=pgsql://root:password@localhost:3306/smartpos_analytics
 ALLOWED_HOSTS=localhost,127.0.0.1
 LARAVEL_API_URL=http://localhost:8000/api
 ```
@@ -395,7 +395,7 @@ Proyek ini dilisensikan di bawah **MIT License** — lihat file [LICENSE](LICENS
 
 | Avatar | Nama | Role |
 |:------:|:----:|:----:|
-| ![Dev](umkm-pos-asset/profile.jpeg) | **iostream-code** | Full Stack Developer |
+| ![Dev]([umkm-pos-asset/profile.jpeg](https://placehold.co/60x60/6366f1/white?text=IC)) | **iostream-code** | Full Stack Developer |
 
 </div>
 
