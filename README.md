@@ -17,9 +17,9 @@
 
 <br/>
 
-![GitHub last commit](https://img.shields.io/github/last-commit/yourusername/smartpos?style=flat-square&color=6366F1)
-![GitHub issues](https://img.shields.io/github/issues/yourusername/smartpos?style=flat-square&color=f59e0b)
-![GitHub stars](https://img.shields.io/github/stars/yourusername/smartpos?style=flat-square&color=facc15)
+![GitHub last commit](https://img.shields.io/github/last-commit/iostream-code/smartpos?style=flat-square&color=6366F1)
+![GitHub issues](https://img.shields.io/github/issues/iostream-code/smartpos?style=flat-square&color=f59e0b)
+![GitHub stars](https://img.shields.io/github/stars/iostream-code/smartpos?style=flat-square&color=facc15)
 
 </div>
 
@@ -31,7 +31,7 @@
 
 | Dashboard | Kasir / POS | Laporan |
 |:---------:|:-----------:|:-------:|
-| ![Dashboard](https://placehold.co/380x220/6366f1/ffffff?text=Dashboard) | ![POS](https://placehold.co/380x220/10b981/ffffff?text=Kasir+POS) | ![Report](https://placehold.co/380x220/f59e0b/ffffff?text=Laporan) |
+| ![Dashboard](umkm-pos-asset/smartpos-dashboard.png) | ![POS](umkm-pos-asset/smartpos-pos.png) | ![Report](umkm-pos-asset/smartpos-analytics.png) |
 | Ringkasan penjualan harian | Antarmuka kasir real-time | Analitik & grafik penjualan |
 
 </div>
@@ -101,19 +101,19 @@
 |-------|-----------|--------|
 | **Frontend** | React.js 18, Vite, Tailwind CSS | Antarmuka pengguna (SPA) |
 | **State Management** | Redux Toolkit / Zustand | Manajemen state global |
-| **Backend API** | Laravel 11, Sanctum | REST API utama, autentikasi |
+| **Backend API** | Laravel 13, Sanctum | REST API utama, autentikasi |
 | **AI/ML Service** | Django 5, DRF, Pandas | Analitik, prediksi, laporan |
-| **Database** | MySQL 8 | Data utama |
+| **Database** | PostgreSQL 18 | Data utama |
 | **Cache/Queue** | Redis | Caching, job queue |
-| **Storage** | MinIO / AWS S3 | Penyimpanan file & gambar |
+| **Storage** | Laravel Storage | Penyimpanan file & gambar |
 
 ---
 
 ## 📁 Struktur Proyek
 
 ```
-smartpos/
-├── 📂 frontend/               # React.js Application
+umkm-pos-app/
+├── 📂 umkm-pos-fe/               # React.js Application
 │   ├── src/
 │   │   ├── components/        # UI Components
 │   │   ├── pages/             # Halaman (Dashboard, POS, dll)
@@ -123,7 +123,7 @@ smartpos/
 │   ├── public/
 │   └── package.json
 │
-├── 📂 backend/                # Laravel Application
+├── 📂 umkm-pos-be/                # Laravel Application
 │   ├── app/
 │   │   ├── Http/Controllers/  # API Controllers
 │   │   ├── Models/            # Eloquent Models
@@ -135,7 +135,7 @@ smartpos/
 │   ├── routes/api.php
 │   └── composer.json
 │
-├── 📂 analytics/              # Django Application
+├── 📂 umkm-pos-ml/              # Django Application
 │   ├── apps/
 │   │   ├── reports/           # Laporan & analitik
 │   │   ├── forecasting/       # Prediksi ML
@@ -143,9 +143,6 @@ smartpos/
 │   ├── manage.py
 │   └── requirements.txt
 │
-├── 📂 docker/                 # Docker configs
-│   ├── nginx/
-│   └── mysql/
 ├── docker-compose.yml
 └── README.md
 ```
@@ -161,7 +158,7 @@ Pastikan sudah terinstal:
 - **Node.js** >= 20.x
 - **Python** >= 3.11
 - **Composer** >= 2.x
-- **MySQL** >= 8.0
+- **PostgreSQL** >= 16.0
 - **Redis**
 
 ---
@@ -169,8 +166,8 @@ Pastikan sudah terinstal:
 ### 1️⃣ Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/smartpos.git
-cd smartpos
+git clone https://github.com/iostream-code/umkm-pos-app.git
+cd umkm-pos-app
 ```
 
 ---
@@ -178,7 +175,7 @@ cd smartpos
 ### 2️⃣ Setup Backend (Laravel)
 
 ```bash
-cd backend
+cd umkm-pos-be
 
 # Install dependencies
 composer install
@@ -209,7 +206,7 @@ php artisan serve
 ### 3️⃣ Setup Frontend (React.js)
 
 ```bash
-cd frontend
+cd umkm-pos-fe
 
 # Install dependencies
 npm install
@@ -231,7 +228,7 @@ npm run dev
 ### 4️⃣ Setup Analytics Service (Django)
 
 ```bash
-cd analytics
+cd umkm-pos-ml
 
 # Buat virtual environment
 python -m venv venv
@@ -278,7 +275,7 @@ Akses aplikasi:
 
 ## ⚙️ Konfigurasi Environment
 
-### Backend (`backend/.env`)
+### Backend (`umkm-pos-be/.env`)
 
 ```env
 APP_NAME=SmartPOS
@@ -299,7 +296,7 @@ REDIS_PORT=6379
 ANALYTICS_SERVICE_URL=http://localhost:8001
 ```
 
-### Frontend (`frontend/.env.local`)
+### Frontend (`umkm-pos-fe/.env.local`)
 
 ```env
 VITE_APP_NAME=SmartPOS
@@ -307,7 +304,7 @@ VITE_API_URL=http://localhost:8000/api
 VITE_ANALYTICS_URL=http://localhost:8001/api
 ```
 
-### Analytics (`analytics/.env`)
+### Analytics (`umkm-pos-ml/.env`)
 
 ```env
 DEBUG=True
@@ -372,15 +369,15 @@ test: menambahkan unit test
 
 ```bash
 # Laravel Tests
-cd backend
+cd umkm-pos-be
 php artisan test
 
 # React Tests
-cd frontend
+cd umkm-pos-fe
 npm run test
 
 # Django Tests
-cd analytics
+cd umkm-pos-ml
 python manage.py test
 ```
 
@@ -398,7 +395,7 @@ Proyek ini dilisensikan di bawah **MIT License** — lihat file [LICENSE](LICENS
 
 | Avatar | Nama | Role |
 |:------:|:----:|:----:|
-| ![Dev](https://placehold.co/60x60/6366f1/white?text=YN) | **Your Name** | Full Stack Developer |
+| ![Dev](umkm-pos-asset/profile.jpeg) | **iostream-code** | Full Stack Developer |
 
 </div>
 
@@ -410,6 +407,6 @@ Proyek ini dilisensikan di bawah **MIT License** — lihat file [LICENSE](LICENS
 
 ⭐ Jangan lupa beri bintang jika proyek ini membantu!
 
-[![GitHub stars](https://img.shields.io/github/stars/yourusername/smartpos?style=social)](https://github.com/yourusername/smartpos)
+[![GitHub stars](https://img.shields.io/github/stars/iostream-code/smartpos?style=social)](https://github.com/iostream-code/umkm-pos-app)
 
 </div>
