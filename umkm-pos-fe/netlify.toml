@@ -1,0 +1,5 @@
+[[redirects]]
+  from = "/api/*"
+  to = "https://api-umkm-pos-be.hexaverse.biz.id/api/:splat"
+  status = 200
+  force = true
