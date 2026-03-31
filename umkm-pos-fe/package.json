@@ -1,7 +1,8 @@
 {
-  "name": "smartpos-frontend",
+  "name": "SmartPOS App",
   "private": true,
   "version": "1.0.0",
+  "homepage": "https://smartpos.hexaverse.biz.id/",
   "type": "module",
   "scripts": {
     "dev": "vite",

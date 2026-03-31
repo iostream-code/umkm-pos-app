@@ -4,7 +4,7 @@ import {
   Tooltip, ResponsiveContainer, BarChart, Bar, Cell,
 } from 'recharts'
 import {
-  TrendingUp, TrendingDown, ShoppingCart,
+  TrendingUp, ShoppingCart,
   Users, Package, AlertTriangle, ArrowUpRight, ArrowDownRight,
 } from 'lucide-react'
 import { dashboardApi } from '@/api'
@@ -82,7 +82,7 @@ export default function DashboardPage() {
   })
 
   const s = data?.summary
-  const isAnalytics = data?.source === 'analytics' // dari Python service
+  const isAnalytics = (data as any)?.source === 'analytics'
 
   // Format data chart — pastikan field sesuai response backend
   const areaData = (data?.weekly_sales ?? []).map((d) => ({
@@ -131,8 +131,8 @@ export default function DashboardPage() {
           value={formatShort(s?.today_revenue ?? 0)}
           icon={<ShoppingCart size={20} className="text-primary-600" />}
           iconBg="bg-primary-50"
-          trend={s?.revenue_growth >= 0 ? 'up' : 'down'}
-          trendValue={`${s?.revenue_growth > 0 ? '+' : ''}${s?.revenue_growth ?? 0}%`}
+          trend={(s?.revenue_growth ?? 0) >= 0 ? 'up' : 'down'}
+          trendValue={`${(s?.revenue_growth ?? 0) > 0 ? '+' : ''}${s?.revenue_growth ?? 0}%`}
           sub="vs kemarin"
         />
         <StatCard
@@ -153,9 +153,9 @@ export default function DashboardPage() {
           label="Stok Menipis"
           value={String(s?.low_stock_count ?? 0)}
           sub="produk perlu restock"
-          icon={<AlertTriangle size={20} className={s?.low_stock_count > 0 ? 'text-danger-500' : 'text-surface-400'} />}
-          iconBg={s?.low_stock_count > 0 ? 'bg-danger-50' : 'bg-surface-100'}
-          trend={s?.low_stock_count > 0 ? 'down' : 'neutral'}
+          icon={<AlertTriangle size={20} className={(s?.low_stock_count ?? 0) > 0 ? 'text-danger-500' : 'text-surface-400'} />}
+          iconBg={(s?.low_stock_count ?? 0) > 0 ? 'bg-danger-50' : 'bg-surface-100'}
+          trend={(s?.low_stock_count ?? 0) > 0 ? 'down' : 'neutral'}
         />
       </div>
 

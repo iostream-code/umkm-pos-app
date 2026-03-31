@@ -473,7 +473,7 @@ export default function StockPage() {
     dataUpdatedAt,
   } = useQuery({
     queryKey: ['stock-forecast'],
-    queryFn: () => analyticsApi.stockForecast(user!.store_id).then((r) => r.data as ForecastData),
+    queryFn: () => analyticsApi.stockForecast((user as any)!.store_id).then((r) => r.data as ForecastData),
     staleTime: 5 * 60 * 1000,
     retry: 1,
   })

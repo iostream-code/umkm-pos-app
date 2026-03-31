@@ -1,10 +1,11 @@
+/// <reference types="vite/client" />
 import Echo from "laravel-echo";
 import Pusher from "pusher-js";
 
 declare global {
   interface Window {
     Pusher: typeof Pusher;
-    Echo: Echo;
+    Echo?: Echo<any>;
   }
 }
 
@@ -14,7 +15,7 @@ window.Pusher = Pusher;
  * Inisialisasi Laravel Echo untuk WebSocket via Laravel Reverb.
  * Dipanggil sekali setelah user login berhasil.
  */
-export function initEcho(token: string): Echo {
+export function initEcho(token: string): Echo<any> {
   if (window.Echo) return window.Echo;
 
   window.Echo = new Echo({
@@ -38,7 +39,6 @@ export function initEcho(token: string): Echo {
 export function destroyEcho(): void {
   if (window.Echo) {
     window.Echo.disconnect();
-    // @ts-ignore
     delete window.Echo;
   }
 }

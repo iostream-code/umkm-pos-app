@@ -3,7 +3,7 @@ import toast from "react-hot-toast";
 import tokenManager from "./tokenManager";
 
 const api = axios.create({
-  baseURL: "/api/v1",
+  baseURL: "https://api-umkm-pos-be.hexaverse.biz.id/api/v1",
   headers: {
     "Content-Type": "application/json",
     Accept: "application/json",

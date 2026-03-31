@@ -647,11 +647,11 @@ function CategoriesTab() {
             <>
               <h4 className="font-semibold text-surface-800 text-sm mb-4">{formTitle}</h4>
               <CategoryForm
-                initial={formMode !== 'idle' && formMode.type === 'edit' ? formMode.cat : undefined}
+                initial={typeof formMode !== 'string' && formMode.type === 'edit' ? formMode.cat : undefined}
                 parentCategories={categories}
-                lockedParentId={formMode !== 'idle' && formMode.type === 'addSub' ? formMode.parentId : undefined}
+                lockedParentId={typeof formMode !== 'string' && formMode.type === 'addSub' ? formMode.parentId : undefined}
                 onSubmit={(data) => {
-                  if (formMode !== 'idle' && formMode.type === 'edit') {
+                  if (typeof formMode !== 'string' && formMode.type === 'edit') {
                     updateMut.mutate({ id: formMode.cat.id, data })
                   } else {
                     createMut.mutate(data)
